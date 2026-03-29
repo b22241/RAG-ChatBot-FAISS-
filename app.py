@@ -1,7 +1,20 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
+
+# Load env variables (works locally, ignored on Render)
 load_dotenv()
+
+# Get PORT (Render provides it, default for local)
+PORT = int(os.environ.get("PORT", 8501))
+
+# Check API Key
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    st.error("❌ GROQ_API_KEY not found. Set it in environment variables.")
+    st.stop()
+
+# LangChain imports
 from langchain.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import HuggingFaceEmbeddings
@@ -9,26 +22,20 @@ from langchain.vectorstores import FAISS
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
 from langchain_core.messages import HumanMessage, AIMessage
 
-# ─── Config ───────────────────────────────────────────────────────────────────
-os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
-
+# ─── Streamlit Config ─────────────────────────────────────────
 st.set_page_config(page_title="Chat with PDF", layout="wide")
-st.title("💬 Chat with your PDF (LCEL + Custom Prompt)")
+st.title("💬 Chat with your PDF (RAG + Groq)")
 
-# ─── Session State ─────────────────────────────────────────────────────────────
+# ─── Session State ─────────────────────────────────────────
 if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []        # List of HumanMessage / AIMessage
+    st.session_state.chat_history = []
 
 if "rag_chain" not in st.session_state:
     st.session_state.rag_chain = None
 
-if "retriever" not in st.session_state:
-    st.session_state.retriever = None
-
-# ─── PDF Upload & Indexing ─────────────────────────────────────────────────────
+# ─── Upload PDF ─────────────────────────────────────────
 uploaded_file = st.file_uploader("Upload a PDF", type="pdf")
 
 if uploaded_file and st.session_state.rag_chain is None:
@@ -38,119 +45,101 @@ if uploaded_file and st.session_state.rag_chain is None:
 
     with st.spinner("Indexing your PDF..."):
 
-        # 1. Load
+        # Load PDF
         loader = PyPDFLoader("temp.pdf")
         documents = loader.load()
 
-        # 2. Split
+        # Split
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=500,
             chunk_overlap=50
         )
         chunks = splitter.split_documents(documents)
 
-        # 3. Embed
+        # Embeddings
         embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2"
         )
 
-        # 4. Vector store  ── MMR for diverse retrieval
+        # Vector Store
         vectorstore = FAISS.from_documents(chunks, embeddings)
         retriever = vectorstore.as_retriever(
             search_type="mmr",
-            search_kwargs={"k": 4, "fetch_k": 20, "lambda_mult": 0.6}
+            search_kwargs={"k": 4}
         )
-        st.session_state.retriever = retriever
 
-        # 5. LLM
-        llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+        # LLM
+        llm = ChatGroq(
+            model="llama-3.3-70b-versatile",
+            temperature=0
+        )
 
-        # ── CHANGE 2: Your own ChatPromptTemplate ─────────────────────────────
+        # Prompt
         prompt = ChatPromptTemplate.from_messages([
             (
                 "system",
                 """You are a precise research assistant.
-Your job is to answer questions strictly based on the document context provided below.
 
 Rules:
-- Answer in clear, concise bullet points when listing facts.
-- If the answer is not present in the context, respond with:
-  "I couldn't find that in the document."
-- Never make up information. Never use outside knowledge.
-- Keep answers focused and under 150 words unless the user asks for detail.
+- Answer only from context
+- Use bullet points
+- If not found, say: "I couldn't find that in the document."
 
-Context from the document:
+Context:
 {context}"""
             ),
-            MessagesPlaceholder("chat_history"),   # ← memory injected here
-            ("human", "{question}"),
+            MessagesPlaceholder("chat_history"),
+            ("human", "{question}")
         ])
 
-        # ── CHANGE 1: LCEL chain with | operator ──────────────────────────────
+        # Helper functions
         def format_docs(docs):
-            return "\n\n".join(
-                f"[Page {d.metadata.get('page', '?')}] {d.page_content}"
-                for d in docs
-            )
+            return "\n\n".join(d.page_content for d in docs)
 
         def get_context(inputs):
-            # Retrieves docs using the question, returns formatted string
             docs = retriever.invoke(inputs["question"])
-            # Store docs in session for source display
-            st.session_state.last_source_docs = docs
+            st.session_state.last_docs = docs
             return format_docs(docs)
 
+        # RAG Chain
         rag_chain = (
             {
-                "context":      get_context,            # retrieve + format
-                "question":     lambda x: x["question"],
+                "context": get_context,
+                "question": lambda x: x["question"],
                 "chat_history": lambda x: x["chat_history"],
             }
-            | prompt            # fill the template
-            | llm               # call Groq
-            | StrOutputParser() # pull plain string out of AIMessage
+            | prompt
+            | llm
+            | StrOutputParser()
         )
 
         st.session_state.rag_chain = rag_chain
 
-    st.success(f"✅ Indexed {len(chunks)} chunks from your PDF!")
+    st.success(f"✅ Indexed {len(chunks)} chunks")
 
-# ─── Display Chat History ──────────────────────────────────────────────────────
+# ─── Chat UI ─────────────────────────────────────────
 for msg in st.session_state.chat_history:
     if isinstance(msg, HumanMessage):
         st.chat_message("user").write(msg.content)
-    elif isinstance(msg, AIMessage):
+    else:
         st.chat_message("assistant").write(msg.content)
 
-# ─── Chat Input ───────────────────────────────────────────────────────────────
-query = st.chat_input("Ask something from the PDF...")
+query = st.chat_input("Ask something...")
 
 if query and st.session_state.rag_chain:
 
-    # Show user message immediately
     st.chat_message("user").write(query)
 
     with st.spinner("Thinking..."):
-        # ── CHANGE 3: Pass HumanMessage/AIMessage history ─────────────────────
         answer = st.session_state.rag_chain.invoke({
             "question": query,
-            "chat_history": st.session_state.chat_history  # list of message objects
+            "chat_history": st.session_state.chat_history
         })
 
-    # Display answer
     st.chat_message("assistant").write(answer)
 
-    # ── CHANGE 3: Store as message objects, not (q, a) tuples ─────────────────
     st.session_state.chat_history.append(HumanMessage(content=query))
     st.session_state.chat_history.append(AIMessage(content=answer))
 
-    # ── Source documents ───────────────────────────────────────────────────────
-    if hasattr(st.session_state, "last_source_docs"):
-        st.write("### 📄 Sources")
-        for i, doc in enumerate(st.session_state.last_source_docs):
-            page = doc.metadata.get("page", "?")
-            with st.expander(f"Source {i+1} — Page {page}"):
-                st.write(doc.page_content)
-
-elif query and not st.session_state.rag_chain:
-    st.warning("⚠️ Please upload a PDF first.")
+elif query:
+    st.warning("⚠️ Upload a PDF first")
