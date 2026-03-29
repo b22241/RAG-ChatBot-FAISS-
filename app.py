@@ -385,7 +385,7 @@ if "pdf_name" not in st.session_state:
 st.markdown("""
 <div class="hero">
     <div class="hero-badge">🧠 Powered by LLaMA 3.3 · Groq · Jina AI</div>
-    <div class="hero-title">DocMind AI</div>
+    <div class="hero-title">आज की डेट में छोरा</div>
     <div class="hero-sub">Upload any PDF and have an intelligent conversation with it</div>
 </div>
 """, unsafe_allow_html=True)
