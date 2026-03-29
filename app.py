@@ -15,7 +15,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import HumanMessage, AIMessage
 
 st.set_page_config(
-    page_title="DocMind AI",
+    page_title="आज की डेट में छोरा",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="collapsed"
