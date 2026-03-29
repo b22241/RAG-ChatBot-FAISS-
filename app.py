@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import uuid
 from dotenv import load_dotenv
 
 # Loads from .env locally, Railway env vars in production
@@ -17,7 +18,10 @@ from langchain_core.messages import HumanMessage, AIMessage
 st.set_page_config(page_title="Chat with PDF", layout="wide")
 st.title("💬 Chat with your PDF")
 
-# Session state
+# ✅ Give every browser session a unique ID
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
@@ -41,12 +45,15 @@ def load_embeddings():
 
 if uploaded_file and st.session_state.rag_chain is None:
 
-    with open("temp.pdf", "wb") as f:
+    # ✅ Each user writes to their own unique temp file
+    temp_path = f"temp_{st.session_state.session_id}.pdf"
+
+    with open(temp_path, "wb") as f:
         f.write(uploaded_file.read())
 
     with st.spinner("Indexing your PDF..."):
 
-        loader = PyPDFLoader("temp.pdf")
+        loader = PyPDFLoader(temp_path)
         docs = loader.load()
 
         splitter = RecursiveCharacterTextSplitter(
@@ -60,6 +67,7 @@ if uploaded_file and st.session_state.rag_chain is None:
         if embeddings is None:
             st.stop()
 
+        # ✅ Vectorstore is stored inside session_state — isolated per user
         vectorstore = FAISS.from_documents(chunks, embeddings)
         retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
 
@@ -89,6 +97,10 @@ if uploaded_file and st.session_state.rag_chain is None:
         )
 
         st.session_state.rag_chain = rag_chain
+
+    # ✅ Clean up temp file after indexing to save disk space
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
 
     st.success("✅ PDF indexed! Start chatting below.")
 
