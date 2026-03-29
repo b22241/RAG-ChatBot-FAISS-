@@ -17,13 +17,14 @@ else:
 
 # Imports
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import HumanMessage, AIMessage
+from pydantic.v1 import SecretStr
 
 st.set_page_config(page_title="Chat with PDF", layout="wide")
 st.title("💬 Chat with your PDF")
@@ -36,10 +37,15 @@ if "rag_chain" not in st.session_state:
     st.session_state.rag_chain = None
 
 uploaded_file = st.file_uploader("Upload PDF", type="pdf")
-
+# changed somtething
 @st.cache_resource
 def load_embeddings():
-    return HuggingFaceEmbeddings(
+    hf_api_key = os.getenv("HF_API_KEY")
+    if not hf_api_key:
+        st.error("⚠️ HF_API_KEY missing")
+        return None
+    return HuggingFaceInferenceAPIEmbeddings(
+        api_key=SecretStr(hf_api_key),
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
