@@ -12,8 +12,7 @@ st.write(f"Running on port: {port}")  # debug
 # Check API Key
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if not GROQ_API_KEY:
-    st.error("❌ GROQ_API_KEY not found. Set it in Render environment variables.")
-    st.stop()
+    st.warning("⚠️ GROQ_API_KEY missing, app still running (debug mode)")
 
 # LangChain imports
 from langchain_community.document_loaders import PyPDFLoader
