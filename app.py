@@ -2,34 +2,22 @@ import streamlit as st
 import os
 from dotenv import load_dotenv
 
+# Loads from .env locally, Railway env vars in production
 load_dotenv()
 
-# Debug start
-st.write("🚀 App is starting...")
-
-# API key
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
-if not GROQ_API_KEY:
-    st.warning("⚠️ GROQ_API_KEY missing (set in Render env)")
-else:
-    st.success("✅ API key loaded")
-
-# Imports
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
+from langchain_community.embeddings import JinaEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import HumanMessage, AIMessage
-from pydantic.v1 import SecretStr
 
 st.set_page_config(page_title="Chat with PDF", layout="wide")
 st.title("💬 Chat with your PDF")
 
-# Session
+# Session state
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
@@ -37,24 +25,26 @@ if "rag_chain" not in st.session_state:
     st.session_state.rag_chain = None
 
 uploaded_file = st.file_uploader("Upload PDF", type="pdf")
-# changed somtething
+
+
 @st.cache_resource
 def load_embeddings():
-    hf_api_key = os.getenv("HF_API_KEY")
-    if not hf_api_key:
-        st.error("⚠️ HF_API_KEY missing")
+    jina_api_key = os.getenv("JINA_API_KEY")
+    if not jina_api_key:
+        st.error("❌ JINA_API_KEY missing — add it to your .env file or Railway env vars")
         return None
-    return HuggingFaceInferenceAPIEmbeddings(
-        api_key=SecretStr(hf_api_key),
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    return JinaEmbeddings(
+        jina_api_key=jina_api_key,
+        model_name="jina-embeddings-v2-base-en"
     )
+
 
 if uploaded_file and st.session_state.rag_chain is None:
 
     with open("temp.pdf", "wb") as f:
         f.write(uploaded_file.read())
 
-    with st.spinner("Indexing..."):
+    with st.spinner("Indexing your PDF..."):
 
         loader = PyPDFLoader("temp.pdf")
         docs = loader.load()
@@ -67,13 +57,16 @@ if uploaded_file and st.session_state.rag_chain is None:
 
         embeddings = load_embeddings()
 
+        if embeddings is None:
+            st.stop()
+
         vectorstore = FAISS.from_documents(chunks, embeddings)
         retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
 
         llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
 
         prompt = ChatPromptTemplate.from_messages([
-            ("system", "Answer only from context:\n{context}"),
+            ("system", "Answer only from the provided context:\n{context}"),
             MessagesPlaceholder("chat_history"),
             ("human", "{question}")
         ])
@@ -97,14 +90,14 @@ if uploaded_file and st.session_state.rag_chain is None:
 
         st.session_state.rag_chain = rag_chain
 
-    st.success("✅ PDF Indexed")
+    st.success("✅ PDF indexed! Start chatting below.")
 
 # Chat UI
 for msg in st.session_state.chat_history:
     role = "user" if isinstance(msg, HumanMessage) else "assistant"
     st.chat_message(role).write(msg.content)
 
-query = st.chat_input("Ask...")
+query = st.chat_input("Ask something about your PDF...")
 
 if query and st.session_state.rag_chain:
 
@@ -119,3 +112,6 @@ if query and st.session_state.rag_chain:
 
     st.session_state.chat_history.append(HumanMessage(content=query))
     st.session_state.chat_history.append(AIMessage(content=answer))
+
+elif query and not st.session_state.rag_chain:
+    st.warning("⚠️ Please upload a PDF first.")
