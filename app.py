@@ -1,5 +1,7 @@
 import streamlit as st
 import os
+from dotenv import load_dotenv
+load_dotenv()
 from langchain.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import HuggingFaceEmbeddings
@@ -11,7 +13,7 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_core.messages import HumanMessage, AIMessage
 
 # ─── Config ───────────────────────────────────────────────────────────────────
-os.environ["GROQ_API_KEY"] = "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"
+os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
 
 st.set_page_config(page_title="Chat with PDF", layout="wide")
 st.title("💬 Chat with your PDF (LCEL + Custom Prompt)")
