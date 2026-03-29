@@ -15,7 +15,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import HumanMessage, AIMessage
 
 st.set_page_config(
-    page_title="आज की डेट में छोरा",
+    page_title="RAG-ChatBot",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -91,7 +91,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
     text-transform: uppercase;
     padding: 0.3rem 1rem;
     border-radius: 100px;
-    margin-bottom: 1.2rem;
+    margin-bottom: 1.0rem;
     animation: fadeSlideDown 0.6s ease both;
 }
 
